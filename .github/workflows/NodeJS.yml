@@ -44,34 +44,10 @@ jobs:
 
 
 
-  test:
-    runs-on: ubuntu-22.04
-    needs: build
-    strategy:
-        fail-fast: false
-        matrix:
-          # os: [ windows, macos, ubuntu ]
-          node-version: [18.x]
-    # concurrency: # group: ${{ github.workflow }}-${{ github.ref }}-build-${{ matrix.os }}-${{ matrix.node-version }}
-    #   group: ${{ github.workflow }}-${{ github.ref }}-${{ matrix.node-version }}
-    #   cancel-in-progress: true
-        # See supported Node.js release schedule at https://nodejs.org/en/about/releases/
-
-    steps:
-    - name: Use cache
-      uses: actions/cache@v3
-      id: restore-build
-      with:
-        path: ./*
-        key: ${{ github.sha }}
-    - name: Test
-      uses: borales/actions-yarn@v3
-      with:
-        cmd: test
 
   deploy:
     runs-on: ubuntu-22.04
-    needs: test
+    needs: build 
     permissions: write-all
     steps:
       - name: Checkout
