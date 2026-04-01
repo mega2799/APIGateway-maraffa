@@ -1,0 +1,138 @@
+# This is a basic workflow to help you get started with Actions
+
+name: CI
+
+# Controls when the workflow will run
+on:
+  workflow_call:
+  push:
+
+    branches: [ "main"]
+    tags: 
+      - '*'
+  pull_request:
+    branches: [ "main", "develop" ]
+    types: [ opened, closed ]
+  workflow_dispatch:
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    strategy:
+        fail-fast: false
+        matrix:
+          # os: [ windows, macos, ubuntu ]
+          node-version: [18.x]
+    # concurrency: # group: ${{ github.workflow }}-${{ github.ref }}-build-${{ matrix.os }}-${{ matrix.node-version }}
+    #   group: ${{ github.workflow }}-${{ github.ref }}-${{ matrix.node-version }}
+    #   cancel-in-progress: true
+        # See supported Node.js release schedule at https://nodejs.org/en/about/releases/
+
+    steps:
+    - uses: actions/checkout@v3
+    - name: Run install
+      uses: borales/actions-yarn@v3
+      with:
+        cmd: install # will run `yarn install` command
+    - name: Make a cache
+      uses: actions/cache@v2
+      id: restore-build
+      with:
+        path: ./*
+        key: ${{ github.sha }}
+
+
+
+  test:
+    runs-on: ubuntu-22.04
+    needs: build
+    strategy:
+        fail-fast: false
+        matrix:
+          # os: [ windows, macos, ubuntu ]
+          node-version: [18.x]
+    # concurrency: # group: ${{ github.workflow }}-${{ github.ref }}-build-${{ matrix.os }}-${{ matrix.node-version }}
+    #   group: ${{ github.workflow }}-${{ github.ref }}-${{ matrix.node-version }}
+    #   cancel-in-progress: true
+        # See supported Node.js release schedule at https://nodejs.org/en/about/releases/
+
+    steps:
+    - name: Use cache
+      uses: actions/cache@v2
+      id: restore-build
+      with:
+        path: ./*
+        key: ${{ github.sha }}
+    - name: Test
+      uses: borales/actions-yarn@v3
+      with:
+        cmd: test
+
+  deploy:
+    if: github.event_name == 'pull_request' && github.event.action == 'closed' && github.event.pull_request.merged == true
+    runs-on: ubuntu-22.04
+    needs: test
+    permissions: write-all
+    strategy:
+      fail-fast: false
+      matrix:
+        # os: [ windows, macos, ubuntu ]
+        node-version: [18.x] 
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v3
+    - name: Set project name 
+      run: echo "REPOSITORY_NAME=user-management-maraffa" >> $GITHUB_ENV
+    - name: Set build version
+      run: echo "BUILD_VERSION=1.0.0" >> $GITHUB_ENV
+    - name: lowercase github.repository
+      run: |
+          echo "IMAGE_NAME=`echo ${{github.repository_owner}}/${{ env.REPOSITORY_NAME }} | tr '[:upper:]' '[:lower:]'`" >>${GITHUB_ENV}
+      if: ${{ github.ref }} == 'refs/heads/main'
+    - name: Extract tag name # Impllcit constraint the tag can be done only from release in main branch
+      run: echo "TAG_NAME=${{ github.event.release.tag_name }}"
+    - name: Set version with latest  
+      run: echo "VERSION=latest" >> $GITHUB_ENV
+      if: ${{ github.ref }} != 'refs/heads/main'
+    - name: Set version with Develop
+      run: echo "VERSION=develop" >> $GITHUB_ENV
+    - name: Use cache 
+      uses: actions/cache@v2
+      id: restore-build
+      with:
+        path: ./*
+        key: ${{ github.sha }}
+    - run: ls 
+    - name: 'Login to GitHub Container Registry'
+      uses: docker/login-action@v1
+      with:
+        registry: ghcr.io
+        username: ${{github.actor}}
+        password: ${{secrets.GITHUB_TOKEN}}
+    - name: Build Docker image
+      run: docker build -t ghcr.io/${{ env.IMAGE_NAME}}:${{ env.VERSION }}  .
+    - name: Push Docker image
+      run: docker push ghcr.io/${{ env.IMAGE_NAME}}:${{ env.VERSION }} 
+
+    #   if: env.TAG_NAME != ''
+    # - name: Build Docker image with tag 
+    #   run: docker build -t ghcr.io//${{ env.IMAGE_NAME}}:${{ env.TAG_NAME }}  .
+    # - name: Push Docker image with tag 
+    #   run: docker push ghcr.io//${{ env.IMAGE_NAME}}:${{ env.TAG_NAME }}
+
+  # success:
+  #   runs-on: ubuntu-22.04
+  #   needs:
+  #     - build
+  #   if: >-
+  #     always() && (
+  #       contains(join(needs.*.result, ','), 'failure')
+  #       || !contains(join(needs.*.result, ','), 'cancelled')
+  #     )
+  #   steps:
+  #     - name: Verify that there were no failures
+  #       run: ${{ !contains(join(needs.*.result, ','), 'failure') }}
